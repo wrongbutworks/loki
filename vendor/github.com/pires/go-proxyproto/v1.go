@@ -13,6 +13,12 @@ import (
 const (
 	crlf      = "\r\n"
 	separator = " "
+
+	// v1ProtoTCP4 and v1ProtoTCP6 are the PROXY protocol v1 transport-protocol
+	// tokens for TCP over IPv4 and IPv6 respectively (net has no constants for
+	// these textual identifiers).
+	v1ProtoTCP4 = "TCP4"
+	v1ProtoTCP6 = "TCP6"
 )
 
 func initVersion1() *Header {
@@ -71,7 +77,7 @@ func parseVersion1(reader *bufio.Reader) (*Header, error) {
 	for {
 		b, err := reader.ReadByte()
 		if err != nil {
-			return nil, fmt.Errorf(ErrCantReadVersion1Header.Error()+": %v", err)
+			return nil, fmt.Errorf("%w: %w", ErrCantReadVersion1Header, err)
 		}
 		buf = append(buf, b)
 		if b == '\n' {
@@ -106,9 +112,9 @@ func parseVersion1(reader *bufio.Reader) (*Header, error) {
 	// Read address family and protocol
 	var transportProtocol AddressFamilyAndProtocol
 	switch tokens[1] {
-	case "TCP4":
+	case v1ProtoTCP4:
 		transportProtocol = TCPv4
-	case "TCP6":
+	case v1ProtoTCP6:
 		transportProtocol = TCPv6
 	case "UNKNOWN":
 		transportProtocol = UNSPEC // doesn't exist in v1 but fits UNKNOWN
@@ -170,9 +176,9 @@ func (header *Header) formatVersion1() ([]byte, error) {
 	var proto string
 	switch header.TransportProtocol {
 	case TCPv4:
-		proto = "TCP4"
+		proto = v1ProtoTCP4
 	case TCPv6:
-		proto = "TCP6"
+		proto = v1ProtoTCP6
 	default:
 		// Unknown connection (short form)
 		return []byte("PROXY UNKNOWN" + crlf), nil
@@ -184,16 +190,28 @@ func (header *Header) formatVersion1() ([]byte, error) {
 		return nil, ErrInvalidAddress
 	}
 
-	sourceIP, destIP := sourceAddr.IP, destAddr.IP
+	// netip.Addr (not net.IP) is used here so String() honors the address family
+	// declared by TransportProtocol. AddrFromSlice reports ok=false when the slice
+	// is nil (e.g. To4() on an IPv6-only address), which the guard below rejects.
+	var sourceIP, destIP netip.Addr
 	switch header.TransportProtocol {
 	case TCPv4:
-		sourceIP = sourceIP.To4()
-		destIP = destIP.To4()
+		sourceIP, sourceOK = netip.AddrFromSlice(sourceAddr.IP.To4())
+		destIP, destOK = netip.AddrFromSlice(destAddr.IP.To4())
 	case TCPv6:
-		sourceIP = sourceIP.To16()
-		destIP = destIP.To16()
+		// Use netip.Addr instead of net.IP to guarantee an Is6() address; i.e. a
+		// v4-mapped IP in a TCP6 header serializes as ::ffff:1.2.3.4 instead of
+		// net.IP.String()'s collapsed 1.2.3.4.
+		sourceIP, sourceOK = netip.AddrFromSlice(sourceAddr.IP.To16())
+		destIP, destOK = netip.AddrFromSlice(destAddr.IP.To16())
+	default:
+		// Unreachable today: the proto switch at the top of this function already
+		// returns for anything other than TCPv4/TCPv6. Kept so a future protocol
+		// can't fall through with zero-value IPs while sourceOK/destOK still hold
+		// from the type assertion above.
+		return nil, ErrInvalidAddress
 	}
-	if sourceIP == nil || destIP == nil {
+	if !sourceOK || !destOK {
 		return nil, ErrInvalidAddress
 	}
 
@@ -216,7 +234,10 @@ func (header *Header) formatVersion1() ([]byte, error) {
 
 func parseV1PortNumber(portStr string) (int, error) {
 	port, err := strconv.Atoi(portStr)
-	if err != nil || port < 0 || port > 65535 {
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrInvalidPortNumber, err)
+	}
+	if port < 0 || port > 65535 {
 		return 0, ErrInvalidPortNumber
 	}
 	return port, nil
@@ -225,7 +246,7 @@ func parseV1PortNumber(portStr string) (int, error) {
 func parseV1IPAddress(protocol AddressFamilyAndProtocol, addrStr string) (net.IP, error) {
 	addr, err := netip.ParseAddr(addrStr)
 	if err != nil {
-		return nil, ErrInvalidAddress
+		return nil, fmt.Errorf("%w: %w", ErrInvalidAddress, err)
 	}
 
 	switch protocol {
@@ -234,8 +255,20 @@ func parseV1IPAddress(protocol AddressFamilyAndProtocol, addrStr string) (net.IP
 			return net.IP(addr.AsSlice()), nil
 		}
 	case TCPv6:
+		// Some proxies (notably nginx OSS stream module) emit plain IPv4
+		// addresses in TCP6 headers when the backend is IPv4 but the client
+		// is IPv6. Promote to IPv4-mapped IPv6 for interoperability.
+		//
+		// This is an intentional departure from the PROXY protocol v1 spec,
+		// which states that addresses in a TCP6 line must be in IPv6 format.
 		if addr.Is6() || addr.Is4In6() {
 			return net.IP(addr.AsSlice()), nil
+		}
+		// ATTENTION: this is a lossy conversion — round-trip serialization will
+		// render the address as "::ffff:x.x.x.x" rather than the original "x.x.x.x".
+		if addr.Is4() {
+			mapped := netip.AddrFrom16(addr.As16())
+			return net.IP(mapped.AsSlice()), nil
 		}
 	}
 
