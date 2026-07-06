@@ -6,7 +6,7 @@ ignore ./tools/dev
 
 require (
 	cloud.google.com/go/bigtable v1.43.0
-	cloud.google.com/go/pubsub/v2 v2.4.0
+	cloud.google.com/go/pubsub/v2 v2.6.0
 	cloud.google.com/go/storage v1.61.3
 	dario.cat/mergo v1.0.2
 	github.com/Azure/azure-pipeline-go v0.2.3
