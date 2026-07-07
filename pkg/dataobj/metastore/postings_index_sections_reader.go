@@ -77,6 +77,8 @@ type postingsIndexSectionsReader struct {
 
 	resolvedRefs uint64
 
+	locality *postings.LocalityAccumulator
+
 	readSpan *xcap.Span
 }
 
@@ -99,6 +101,7 @@ func newPostingsIndexSectionsReader(
 		start:      start,
 		end:        end,
 		batchSize:  batchSize,
+		locality:   postings.NewLocalityAccumulator(),
 	}
 }
 
@@ -129,6 +132,7 @@ func (r *postingsIndexSectionsReader) Open(ctx context.Context) error {
 			return fmt.Errorf("opening postings section: %w", err)
 		}
 		opened = append(opened, sec)
+		sp.Record(StatMetastorePointerSectionsOpened.Observe(1))
 	}
 	r.openSections = opened
 	r.initialized = true
@@ -173,7 +177,7 @@ func (r *postingsIndexSectionsReader) lazyResolve(ctx context.Context) error {
 		r.readSpan.Record(StatMetastoreSectionPointersReadTime.Observe(time.Since(startTime).Seconds()))
 	}()
 
-	selector := newStreamSelector(r.matchers, r.predicates, r.start, r.end)
+	selector := newStreamSelector(r.matchers, r.predicates, r.start, r.end, r.locality)
 	results, err := selector.selectStreams(ctx, r.openSections)
 	if err != nil {
 		return fmt.Errorf("resolving postings sections: %w", err)
@@ -216,7 +220,11 @@ func expandResults(results []SectionStreams) []resolvedRow {
 func (r *postingsIndexSectionsReader) Close() {
 	r.openSections = nil
 	if r.readSpan != nil {
+		// Record the deduped column_name locality once, so the metastore/task
+		// locality summaries read it from the capture via xcap.Value.
+		r.locality.Record(r.readSpan)
 		r.readSpan.End()
+		r.readSpan = nil
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
+	"github.com/grafana/loki/v3/pkg/dataobj/internal/dataset"
 	iter "github.com/grafana/loki/v3/pkg/iter/v2"
 )
 
@@ -34,13 +35,14 @@ type RowReader struct {
 // provided predicates when scanning. The underlying reader is opened lazily on
 // the first call to Next. The provided ctx governs all subsequent I/O (Open and
 // Read).
-func NewRowReader(ctx context.Context, sec *Section, preds []Predicate) *RowReader {
+func NewRowReader(ctx context.Context, sec *Section, preds []Predicate, onColumnNamePruned func(stats dataset.PagePruneStats)) *RowReader {
 	return &RowReader{
 		ctx: ctx,
 		reader: NewReader(ReaderOptions{
-			Columns:    sec.Columns(),
-			Predicates: preds,
-			Allocator:  memory.DefaultAllocator,
+			Columns:            sec.Columns(),
+			Predicates:         preds,
+			Allocator:          memory.DefaultAllocator,
+			OnColumnNamePruned: onColumnNamePruned,
 		}),
 	}
 }

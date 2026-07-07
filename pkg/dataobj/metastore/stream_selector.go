@@ -28,16 +28,17 @@ type streamSelector struct {
 	matchers        []*labels.Matcher
 	equalPredicates []*labels.Matcher
 	start, end      time.Time
+	locality        *postings.LocalityAccumulator
 }
 
-func newStreamSelector(matchers, predicates []*labels.Matcher, start, end time.Time) *streamSelector {
+func newStreamSelector(matchers, predicates []*labels.Matcher, start, end time.Time, locality *postings.LocalityAccumulator) *streamSelector {
 	var eq []*labels.Matcher
 	for _, p := range predicates {
 		if p != nil && p.Type == labels.MatchEqual {
 			eq = append(eq, p)
 		}
 	}
-	return &streamSelector{matchers: matchers, equalPredicates: eq, start: start, end: end}
+	return &streamSelector{matchers: matchers, equalPredicates: eq, start: start, end: end, locality: locality}
 }
 
 // accum holds the per-logs-section state. result is the running intersection of
@@ -151,7 +152,7 @@ func (s *streamSelector) matchMatchers(
 	}
 
 	for _, sec := range sections {
-		matches, err := postings.NewScanner(sec).MatchLabels(ctx, nil, cms)
+		matches, err := postings.NewScanner(sec, s.locality).MatchLabels(ctx, nil, cms)
 		if err != nil {
 			return err
 		}
@@ -196,7 +197,7 @@ func (s *streamSelector) matchFilters(
 	}
 
 	for _, sec := range sections {
-		streams, err := postings.NewScanner(sec).LabelStreams(ctx, nil, cms)
+		streams, err := postings.NewScanner(sec, s.locality).LabelStreams(ctx, nil, cms)
 		if err != nil {
 			return err
 		}
@@ -328,7 +329,7 @@ func (s *streamSelector) admitSections(ctx context.Context, sections []*postings
 	g, ctx := errgroup.WithContext(ctx)
 	for i := range sections {
 		g.Go(func() error {
-			scanner := postings.NewScanner(sections[i])
+			scanner := postings.NewScanner(sections[i], s.locality)
 			matched, ambiguous, err := scanner.MatcherHits(ctx, s.equalPredicates)
 			if err != nil {
 				return err

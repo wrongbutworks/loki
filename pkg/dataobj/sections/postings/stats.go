@@ -13,6 +13,18 @@ var (
 	// StatPostingsBloomRowsRead counts bloom rows scanned while resolving
 	// postings sections.
 	StatPostingsBloomRowsRead = xcap.NewStatisticInt64("postings.bloom.rows.read", xcap.AggregationTypeSum)
+
+	// StatColumnNamePagesTotal is the total number of pages in the scanned
+	// sections' column_name columns.
+	StatColumnNamePagesTotal = xcap.NewStatisticInt64("postings.column_name.pages.total", xcap.AggregationTypeSum)
+
+	// StatColumnNameRelevantPages is the number of column_name pages whose
+	// min/max range overlaps the queried label names.
+	StatColumnNameRelevantPages = xcap.NewStatisticInt64("postings.column_name.pages.relevant", xcap.AggregationTypeSum)
+
+	// StatColumnNamePageRuns is the number of contiguous runs of relevant
+	// column_name pages.
+	StatColumnNamePageRuns = xcap.NewStatisticInt64("postings.column_name.pages.runs", xcap.AggregationTypeSum)
 )
 
 type (

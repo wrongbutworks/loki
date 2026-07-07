@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/dataobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/postings"
 	"github.com/grafana/loki/v3/pkg/engine/internal/executor"
 	"github.com/grafana/loki/v3/pkg/engine/internal/planner/physical"
 	"github.com/grafana/loki/v3/pkg/engine/internal/scheduler/schedulerstat"
@@ -95,8 +96,10 @@ func (wf *Workflow) printTaskSummary(task *Task, oldState TaskState, newStatus T
 		"cache_check", taskResultCacheOutcome(capture),
 	)
 
-	if isScanTask(task) {
-		// print log section data locality as a separate log line.
+	// Section data locality goes on a separate log line, one shape per scan kind.
+	if isPostingsScanTask(task) {
+		wf.printTaskPostingsLocalitySummary(task, capture)
+	} else if isScanTask(task) {
 		wf.printTaskLogLocalitySummary(task, capture)
 	}
 }
@@ -124,6 +127,27 @@ func (wf *Workflow) printTaskLogLocalitySummary(task *Task, capture *xcap.Captur
 		"stream_row_relevance", ratio(relevantRows, rowsTotal),
 		"stream_page_relevance", ratio(streamRelevantPages, streamPagesTotal),
 		"stream_page_fragmentation", ratio(streamPageRuns, streamRelevantPages),
+	)
+}
+
+func (wf *Workflow) printTaskPostingsLocalitySummary(task *Task, capture *xcap.Capture) {
+	pagesTotal := xcap.Value[int64](capture, postings.StatColumnNamePagesTotal)
+	pagesRelevant := xcap.Value[int64](capture, postings.StatColumnNameRelevantPages)
+	pageRuns := xcap.Value[int64](capture, postings.StatColumnNamePageRuns)
+
+	level.Info(wf.logger).Log(
+		"msg", "task-postings-locality-summary",
+		// Identity
+		"task_id", task.ULID,
+		"query_id", wf.opts.ID,
+		"parent_task_id", wf.parentTaskID(task),
+
+		// Locality
+		"postings_column_name_pages_total", pagesTotal,
+		"postings_column_name_pages_relevant", pagesRelevant,
+		"postings_column_name_page_runs", pageRuns,
+		"postings_page_relevance", ratio(pagesRelevant, pagesTotal),
+		"postings_page_fragmentation", ratio(pageRuns, pagesRelevant),
 	)
 }
 

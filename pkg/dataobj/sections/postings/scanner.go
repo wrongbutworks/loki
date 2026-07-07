@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/loki/v3/pkg/columnar"
 	"github.com/grafana/loki/v3/pkg/compute"
+	"github.com/grafana/loki/v3/pkg/dataobj/internal/dataset"
 	"github.com/grafana/loki/v3/pkg/memory"
 	"github.com/grafana/loki/v3/pkg/xcap"
 )
@@ -32,10 +33,22 @@ type LabelStreams struct {
 // uses its own reader and is safe to share across goroutines.
 type Scanner struct {
 	sec *Section
+	acc *LocalityAccumulator
 }
 
-// NewScanner returns a Scanner bound to sec.
-func NewScanner(sec *Section) *Scanner { return &Scanner{sec: sec} }
+// NewScanner returns a Scanner bound to sec. acc may be nil to skip locality
+// accumulation.
+func NewScanner(sec *Section, acc *LocalityAccumulator) *Scanner {
+	return &Scanner{sec: sec, acc: acc}
+}
+
+// newRowReader wires the Scanner's locality accumulator (if any) into a
+// RowReader over its section.
+func (s *Scanner) newRowReader(ctx context.Context, preds []Predicate) *RowReader {
+	return NewRowReader(ctx, s.sec, preds, func(stats dataset.PagePruneStats) {
+		s.acc.observe(s.sec, stats)
+	})
+}
 
 // MatchLabels scans the section once for all cms (kind=Label AND OR-of per
 // matcher (name=cm.Name AND cm.valuePredicate)), attributing each row back to
@@ -178,7 +191,7 @@ func labelNamesPredicate(kindCol, nameCol *Column, names map[string][]int) Predi
 }
 
 func (s *Scanner) eachRow(ctx context.Context, pred Predicate, fn func(Row)) error {
-	rr := NewRowReader(ctx, s.sec, []Predicate{pred})
+	rr := s.newRowReader(ctx, []Predicate{pred})
 	defer rr.Close()
 	for rr.Next() {
 		row := rr.At()
@@ -281,7 +294,7 @@ func (s *Scanner) MatcherHits(ctx context.Context, matchers []*labels.Matcher) (
 	matched := make(map[SectionRef]map[PredicateValue]struct{})
 	var bloomRowsRead int64
 	if pred := s.bloomMatchPredicate(kindCol, nameCol, bloomCol, matchers); pred != nil {
-		br := NewRowReader(ctx, s.sec, []Predicate{pred})
+		br := s.newRowReader(ctx, []Predicate{pred})
 		for br.Next() {
 			bloomRowsRead++
 			row := br.At()
@@ -352,7 +365,7 @@ func (s *Scanner) labelNameHits(ctx context.Context, kindCol, nameCol *Column, m
 		names = append(names, scalar.NewStringScalar(p.Name))
 	}
 
-	lr := NewRowReader(ctx, s.sec, []Predicate{AndPredicate{
+	lr := s.newRowReader(ctx, []Predicate{AndPredicate{
 		Left:  EqualPredicate{Column: kindCol, Value: scalar.NewInt64Scalar(int64(KindLabel))},
 		Right: InPredicate{Column: nameCol, Values: names},
 	}})

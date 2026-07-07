@@ -253,7 +253,7 @@ func (c *Context) mergePostingsIntoBuilder(ctx context.Context, tenant string, s
 		}
 
 		readers = append(readers, indexedSeq[postings.Row]{
-			CloseIterator: postings.NewRowReader(ctx, sec, nil),
+			CloseIterator: postings.NewRowReader(ctx, sec, nil, nil),
 			idx:           i,
 		})
 	}

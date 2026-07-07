@@ -26,7 +26,7 @@ func streamIDs(r SectionStreams) []int64 {
 }
 
 func TestStreamSelector_ZeroMatchers(t *testing.T) {
-	r := newStreamSelector(nil, nil, time.Unix(0, 0), time.Unix(0, 100))
+	r := newStreamSelector(nil, nil, time.Unix(0, 0), time.Unix(0, 100), nil)
 	res, err := r.selectStreams(context.Background(), nil)
 	require.NoError(t, err)
 	require.Empty(t, res)
@@ -41,7 +41,7 @@ func TestStreamSelector_SingleSectionLabelMatch(t *testing.T) {
 	defer closer()
 
 	m := labels.MustNewMatcher(labels.MatchEqual, "app", "nginx")
-	r := newStreamSelector([]*labels.Matcher{m}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	r := newStreamSelector([]*labels.Matcher{m}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
@@ -66,7 +66,7 @@ func TestStreamSelector_MatcherANDViaBitmap(t *testing.T) {
 	r := newStreamSelector([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "job", "distributor"),
 		labels.MustNewMatcher(labels.MatchEqual, "namespace", "dev"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestStreamSelector_ANDAcrossPhysicalSections(t *testing.T) {
 	r := newStreamSelector([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "app", "foo"),
 		labels.MustNewMatcher(labels.MatchEqual, "env", "prod"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestStreamSelector_CrossStreamNoFalsePositive(t *testing.T) {
 	r := newStreamSelector([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "job", "worker"),
 		labels.MustNewMatcher(labels.MatchEqual, "namespace", "dev"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestStreamSelector_TimePruning(t *testing.T) {
 	defer closer()
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "nginx")},
-		nil, time.Unix(0, 100), time.Unix(0, 200), // no overlap with [10,20]
+		nil, time.Unix(0, 100), time.Unix(0, 200), nil, // no overlap with [10,20]
 	)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestStreamSelector_MissingLabelSemantics(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchEqual, "app", "nginx"),
 			labels.MustNewMatcher(labels.MatchNotEqual, "team", "bar"),
 		},
-		nil, time.Unix(0, 0), time.Unix(0, 1000),
+		nil, time.Unix(0, 0), time.Unix(0, 1000), nil,
 	)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestStreamSelector_MissingLabelViaAndNot(t *testing.T) {
 	r := newStreamSelector([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "app", "loki"),
 		labels.MustNewMatcher(labels.MatchEqual, "job", ""),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -193,7 +193,7 @@ func TestStreamSelector_SectionWideTimestampEnvelope(t *testing.T) {
 	defer closer()
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "loki")},
-		nil, time.Unix(0, 0), time.Unix(0, 1000),
+		nil, time.Unix(0, 0), time.Unix(0, 1000), nil,
 	)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -214,10 +214,10 @@ func TestStreamSelector_OrderIndependent(t *testing.T) {
 	defer closeB()
 	m := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "nginx")}
 
-	r1 := newStreamSelector(m, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	r1 := newStreamSelector(m, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res1, err := r1.selectStreams(ctx, append(append([]*postings.Section{}, secsA...), secsB...))
 	require.NoError(t, err)
-	r2 := newStreamSelector(m, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	r2 := newStreamSelector(m, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res2, err := r2.selectStreams(ctx, append(append([]*postings.Section{}, secsB...), secsA...))
 	require.NoError(t, err)
 
@@ -249,7 +249,7 @@ func TestStreamSelector_SectionAmbiguousNames(t *testing.T) {
 
 	ms := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "web")}
 	preds := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "trace_id", "x")}
-	r := newStreamSelector(ms, preds, time.Unix(0, 0), time.Unix(0, 1000))
+	r := newStreamSelector(ms, preds, time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
@@ -273,7 +273,7 @@ func TestStreamSelector_BloomFilters(t *testing.T) {
 	// Predicate present in bloom -> section kept.
 	rHit := newStreamSelector(ms,
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "trace_id", "abc")},
-		time.Unix(0, 0), time.Unix(0, 1000))
+		time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res, err := rHit.selectStreams(ctx, secs)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
@@ -281,7 +281,7 @@ func TestStreamSelector_BloomFilters(t *testing.T) {
 	// Predicate absent from bloom -> section dropped.
 	rMiss := newStreamSelector(ms,
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "trace_id", "zzz")},
-		time.Unix(0, 0), time.Unix(0, 1000))
+		time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res, err = rMiss.selectStreams(ctx, secs)
 	require.NoError(t, err)
 	require.Empty(t, res)
@@ -301,7 +301,7 @@ func TestStreamSelector_StreamLabelPredicateDropped(t *testing.T) {
 	ms := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "nginx")}
 	r := newStreamSelector(ms,
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "nginx")},
-		time.Unix(0, 0), time.Unix(0, 1000))
+		time.Unix(0, 0), time.Unix(0, 1000), nil)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
@@ -322,7 +322,7 @@ func TestStreamSelector_PerObjectStreamIDReuse(t *testing.T) {
 
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "loki")},
-		nil, time.Unix(0, 0), time.Unix(0, 1000),
+		nil, time.Unix(0, 0), time.Unix(0, 1000), nil,
 	)
 	res, err := r.selectStreams(ctx, append(append([]*postings.Section{}, secsA...), secsB...))
 	require.NoError(t, err)
@@ -348,7 +348,7 @@ func TestStreamSelector_InterleavedLogicalSections(t *testing.T) {
 
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "loki")},
-		nil, time.Unix(0, 0), time.Unix(0, 1000),
+		nil, time.Unix(0, 0), time.Unix(0, 1000), nil,
 	)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -378,7 +378,7 @@ func TestStreamSelector_SecondMatcherOnlyKeyDropped(t *testing.T) {
 	r := newStreamSelector([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "app", "loki"),
 		labels.MustNewMatcher(labels.MatchEqual, "team", "x"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -401,7 +401,7 @@ func TestStreamSelector_MatchAllRegexpDoesNotPanic(t *testing.T) {
 
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "app", ".*")},
-		nil, time.Unix(0, 0), time.Unix(0, 1000),
+		nil, time.Unix(0, 0), time.Unix(0, 1000), nil,
 	)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -421,7 +421,7 @@ func TestStreamSelector_OnlyFiltersErrors(t *testing.T) {
 
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "team", "bar")},
-		nil, time.Unix(0, 0), time.Unix(0, 1000),
+		nil, time.Unix(0, 0), time.Unix(0, 1000), nil,
 	)
 	_, err := r.selectStreams(ctx, secs)
 	require.Error(t, err)
@@ -441,7 +441,7 @@ func TestStreamSelector_TimePruningConservativeEnvelope(t *testing.T) {
 
 	r := newStreamSelector(
 		[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "loki")},
-		nil, time.Unix(0, 900), time.Unix(0, 1100),
+		nil, time.Unix(0, 900), time.Unix(0, 1100), nil,
 	)
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -467,7 +467,7 @@ func TestStreamSelector_MatchNotRegexp(t *testing.T) {
 	r := newStreamSelector([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "app", "web"),
 		labels.MustNewMatcher(labels.MatchNotRegexp, "env", "prod.*"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -503,7 +503,7 @@ func TestStreamSelector_LogicalSectionAcrossPhysicalSections(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "app", "web"),
 		labels.MustNewMatcher(labels.MatchEqual, "env", "prod"),
 		labels.MustNewMatcher(labels.MatchEqual, "region", "us"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -544,7 +544,7 @@ func TestStreamSelector_MixedMatcherTypes(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchRegexp, "job", "api.*"),
 		labels.MustNewMatcher(labels.MatchNotEqual, "team", "sre"),
 		labels.MustNewMatcher(labels.MatchNotRegexp, "region", "eu.*"),
-	}, nil, time.Unix(0, 0), time.Unix(0, 1000))
+	}, nil, time.Unix(0, 0), time.Unix(0, 1000), nil)
 
 	res, err := r.selectStreams(ctx, secs)
 	require.NoError(t, err)
@@ -591,7 +591,7 @@ func BenchmarkStreamSelector_SelectStreams(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r := newStreamSelector(matchers, nil, time.Unix(0, 0), time.Unix(0, 2000))
+		r := newStreamSelector(matchers, nil, time.Unix(0, 0), time.Unix(0, 2000), nil)
 		if _, err := r.selectStreams(ctx, secs); err != nil {
 			b.Fatal(err)
 		}

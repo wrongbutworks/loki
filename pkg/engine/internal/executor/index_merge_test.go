@@ -764,7 +764,7 @@ func readPostingsRowsFromBucket(ctx context.Context, t *testing.T, bucket objsto
 
 	require.NotNil(t, sec, "expected postings section in output object")
 
-	reader := postings.NewRowReader(ctx, sec, nil)
+	reader := postings.NewRowReader(ctx, sec, nil, nil)
 	defer reader.Close()
 
 	var rows []postings.Row

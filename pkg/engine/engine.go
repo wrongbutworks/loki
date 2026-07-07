@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/dataobj"
 	"github.com/grafana/loki/v3/pkg/dataobj/metastore"
 	"github.com/grafana/loki/v3/pkg/dataobj/sections/logs"
+	"github.com/grafana/loki/v3/pkg/dataobj/sections/postings"
 	"github.com/grafana/loki/v3/pkg/engine/internal/deletion"
 	"github.com/grafana/loki/v3/pkg/engine/internal/executor"
 	"github.com/grafana/loki/v3/pkg/engine/internal/planner/logical"
@@ -719,6 +720,9 @@ func printMetastoreLocalitySummary(q *query, sectionsResolved int) {
 		"index_sections_opened", xcap.Value[int64](q.capture, metastore.StatMetastorePointerSectionsOpened),
 		"index_sections_productive", xcap.Value[int64](q.capture, metastore.StatMetastorePointerSectionsProductive),
 		"logs_sections_resolved", sectionsResolved,
+		"postings_column_name_pages_total", xcap.Value[int64](q.capture, postings.StatColumnNamePagesTotal),
+		"postings_column_name_pages_relevant", xcap.Value[int64](q.capture, postings.StatColumnNameRelevantPages),
+		"postings_column_name_page_runs", xcap.Value[int64](q.capture, postings.StatColumnNamePageRuns),
 	)
 }
 

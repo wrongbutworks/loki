@@ -226,7 +226,7 @@ func scanAll[T any](t *testing.T, secs []*postings.Section, scan func(*postings.
 	t.Helper()
 	var got map[postings.SectionRef]T
 	for _, sec := range secs {
-		m, err := scan(postings.NewScanner(sec))
+		m, err := scan(postings.NewScanner(sec, nil))
 		require.NoError(t, err)
 		if len(m) > 0 {
 			got = m
@@ -260,7 +260,7 @@ func TestScanner_MatcherHits(t *testing.T) {
 
 	var hitFound bool
 	for _, sec := range secs {
-		hits, _, err := postings.NewScanner(sec).MatcherHits(ctx, matchers)
+		hits, _, err := postings.NewScanner(sec, nil).MatcherHits(ctx, matchers)
 		require.NoError(t, err)
 		if _, ok := hits[ref][postings.PredicateValue{Name: "trace_id", Value: "abc"}]; ok {
 			hitFound = true
@@ -294,7 +294,7 @@ func TestScanner_MatcherHits_MultiBloomSinglePass(t *testing.T) {
 
 	got := make(map[postings.PredicateValue]struct{})
 	for _, sec := range secs {
-		hits, _, err := postings.NewScanner(sec).MatcherHits(ctx, matchers)
+		hits, _, err := postings.NewScanner(sec, nil).MatcherHits(ctx, matchers)
 		require.NoError(t, err)
 		for pv := range hits[ref] {
 			got[pv] = struct{}{}
@@ -321,7 +321,7 @@ func TestScanner_MatcherHits_AttributesByValueNotName(t *testing.T) {
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "app", "mimir")}
 
 	for _, sec := range secs {
-		hits, _, err := postings.NewScanner(sec).MatcherHits(ctx, matchers)
+		hits, _, err := postings.NewScanner(sec, nil).MatcherHits(ctx, matchers)
 		require.NoError(t, err)
 		_, hit := hits[ref][postings.PredicateValue{Name: "app", Value: "mimir"}]
 		require.False(t, hit, "matching column name but wrong value must not attribute a hit")
@@ -342,7 +342,7 @@ func TestScanner_MatcherHits_DuplicateNameRejected(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "app", "bar"),
 	}
 	for _, sec := range secs {
-		_, _, err := postings.NewScanner(sec).MatcherHits(ctx, matchers)
+		_, _, err := postings.NewScanner(sec, nil).MatcherHits(ctx, matchers)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "duplicate equal-predicate name")
 	}
@@ -368,7 +368,7 @@ func TestScanner_MatcherHits_LabelNamesSinglePass(t *testing.T) {
 
 	got := make(map[string]struct{})
 	for _, sec := range secs {
-		_, ambiguous, err := postings.NewScanner(sec).MatcherHits(ctx, matchers)
+		_, ambiguous, err := postings.NewScanner(sec, nil).MatcherHits(ctx, matchers)
 		require.NoError(t, err)
 		for name := range ambiguous[ref] {
 			got[name] = struct{}{}

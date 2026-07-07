@@ -39,6 +39,21 @@ type RowReaderOptions struct {
 	// starts. To reduce read latency, this option should only be disabled when
 	// the entire Dataset is already held in memory.
 	Prefetch bool
+
+	// OnColumnPruned, if set, is invoked once per predicate column after its
+	// pages have been pruned, reporting the column's page-locality.
+	OnColumnPruned func(Column, PagePruneStats)
+}
+
+// PagePruneStats reports the outcome of predicate-based page pruning for a
+// single column: how many pages it has, how many overlap the predicate, and how
+// many contiguous runs those relevant pages form. A run count near RelevantPages
+// means the relevant pages are scattered; a count near 1 means they are
+// clustered.
+type PagePruneStats struct {
+	TotalPages    int
+	RelevantPages int
+	PageRuns      int
 }
 
 // A RowReader reads [Row]s from a [Dataset].
@@ -875,6 +890,8 @@ func (r *RowReader) buildColumnPredicateRanges(ctx context.Context, c Column, p 
 
 		isStreamCol      = isStreamIDColumn(c)
 		prevPageIncluded bool // used for tracking avg run length
+
+		totalPages, relevantPages, runsCnt int
 	)
 
 	for result := range c.ListPages(ctx) {
@@ -895,6 +912,7 @@ func (r *RowReader) buildColumnPredicateRanges(ctx context.Context, c Column, p 
 		if isStreamCol {
 			region.Record(dataobj.StatStreamPagesTotal.Observe(1))
 		}
+		totalPages++
 
 		minValue, maxValue, err := readMinMax(pageInfo.Stats)
 		if err != nil {
@@ -911,6 +929,10 @@ func (r *RowReader) buildColumnPredicateRanges(ctx context.Context, c Column, p 
 					region.Record(dataobj.StatStreamPageRuns.Observe(1))
 				}
 
+			}
+			relevantPages++
+			if !prevPageIncluded {
+				runsCnt++
 			}
 
 			prevPageIncluded = true
@@ -950,6 +972,10 @@ func (r *RowReader) buildColumnPredicateRanges(ctx context.Context, c Column, p 
 					region.Record(dataobj.StatStreamPageRuns.Observe(1))
 				}
 			}
+			relevantPages++
+			if !prevPageIncluded {
+				runsCnt++
+			}
 		} else {
 			// Page-level stats were present and the predicate ruled out the page,
 			// so the page will not be downloaded for this predicate. Pages without
@@ -959,6 +985,14 @@ func (r *RowReader) buildColumnPredicateRanges(ctx context.Context, c Column, p 
 		}
 
 		prevPageIncluded = include
+	}
+
+	if r.opts.OnColumnPruned != nil {
+		r.opts.OnColumnPruned(c, PagePruneStats{
+			TotalPages:    totalPages,
+			RelevantPages: relevantPages,
+			PageRuns:      runsCnt,
+		})
 	}
 
 	return ranges, nil

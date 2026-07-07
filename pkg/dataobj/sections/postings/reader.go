@@ -31,6 +31,10 @@ type ReaderOptions struct {
 	// Allocator to use for allocating Arrow records. If nil,
 	// [memory.DefaultAllocator] is used.
 	Allocator memory.Allocator
+
+	// OnColumnNamePruned, if set, is invoked once after the column_name column's
+	// pages are pruned, reporting its page-locality.
+	OnColumnNamePruned func(dataset.PagePruneStats)
 }
 
 // validate returns an error if opts is invalid. ReaderOptions are valid when
@@ -203,6 +207,13 @@ func (r *Reader) init(ctx context.Context) error {
 		Columns:    dset.Columns(),
 		Predicates: preds,
 		Prefetch:   true,
+	}
+	if r.opts.OnColumnNamePruned != nil {
+		innerOptions.OnColumnPruned = func(c dataset.Column, s dataset.PagePruneStats) {
+			if c.ColumnDesc().Type.Logical == ColumnTypeColumnName.String() {
+				r.opts.OnColumnNamePruned(s)
+			}
+		}
 	}
 	if r.inner == nil {
 		r.inner = columnar.NewReaderAdapter(innerOptions)
